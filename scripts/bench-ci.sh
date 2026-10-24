@@ -5,6 +5,9 @@ ways=(
   "rars decode=bin/rar-perf read {a} sink-handle"
   "rars extract=bin/rar-perf read {a} rars-disk-pipelined"
   "rars extract, path walk=bin/rar-perf-pathwalk read {a} rars-disk-pipelined"
+  "rars extract, 2 writers=bin/rar-perf read {a} rars-disk-pool2"
+  "rars extract, 4 writers=bin/rar-perf read {a} rars-disk-pool4"
+  "rars extract, 8 writers=bin/rar-perf read {a} rars-disk-pool8"
   "UnRAR decode=bin/rar-perf read {a} unrar-test"
   "UnRAR extract=bin/rar-perf read {a} unrar-pipe-disk"
 )

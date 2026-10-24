@@ -4,7 +4,8 @@
 //!   rar-perf make4 <folder> <out.rar>     the same as RAR 2.9 (RAR4)
 //!   rar-perf make4lz <folder> <out.rar>   RAR4 with LZ only (no PPMd), like WinRAR's default
 //!   rar-perf read <archive> <how> [times] how = sink | sink-handle | crc | parallel | unrar | unrar-test
-//!                                         | unrar-pipe | rars-disk | rars-disk-pipelined | unrar-disk | unrar-pipe-disk
+//!                                         | unrar-pipe | rars-disk | rars-disk-pipelined | rars-disk-pool<N>
+//!                                         | unrar-disk | unrar-pipe-disk
 //!
 //! The `-disk` ways extract for real, every file through spike-safe-path into
 //! a new folder; `unrar-pipe` runs UnRAR in a child process (`rar-perf
@@ -286,7 +287,77 @@ fn read(archive: &Path, how: &str) -> Result<u64, Box<dyn std::error::Error>> {
             decoder.join().map_err(|_| "decoder panicked")??;
             Ok(n)
         }
+        how if how.starts_with("rars-disk-pool") => {
+            // Decoding on this thread; each file, once whole, goes to one of
+            // a pool of writers that create, write and close it, so the
+            // per-file costs (a scanner on close, chiefly) overlap.
+            let writers: usize = how["rars-disk-pool".len()..]
+                .parse()
+                .map_err(|_| format!("rars-disk-pool<N>: bad count in {how}"))?;
+            let tmp = tempfile::tempdir()?;
+            let dest = Arc::new(spike_safe_path::Destination::new(tmp.path().join("out"))?);
+            let (tx, rx) = std::sync::mpsc::sync_channel::<(String, Vec<u8>)>(writers * 4);
+            let rx = Arc::new(std::sync::Mutex::new(rx));
+            let n = Arc::new(AtomicU64::new(0));
+            let pool: Vec<_> = (0..writers)
+                .map(|_| {
+                    let (rx, dest, n) = (Arc::clone(&rx), Arc::clone(&dest), Arc::clone(&n));
+                    std::thread::spawn(move || -> Result<(), String> {
+                        loop {
+                            let job = rx.lock().map_err(|_| "poisoned")?.recv();
+                            let Ok((name, data)) = job else { return Ok(()) };
+                            let mut file = create(&dest, &name)?;
+                            file.write_all(&data).map_err(|e| e.to_string())?;
+                            n.fetch_add(data.len() as u64, Ordering::Relaxed);
+                        }
+                    })
+                })
+                .collect();
+            let a = rars::ArchiveReader::read_reader(std::fs::File::open(archive)?)?;
+            a.extract_to(None, |meta| -> rars::Result<Box<dyn Write>> {
+                if meta.is_directory {
+                    return Ok(Box::new(io::sink()));
+                }
+                Ok(Box::new(Whole {
+                    name: String::from_utf8_lossy(&meta.name).into_owned(),
+                    data: Vec::new(),
+                    tx: tx.clone(),
+                }))
+            })?;
+            drop(tx);
+            for writer in pool {
+                writer.join().map_err(|_| "writer panicked")??;
+            }
+            Ok(n.load(Ordering::Relaxed))
+        }
         other => Err(format!("unknown way to read: {other}").into()),
+    }
+}
+
+/// Collects one file and hands it to the writer pool when rars is done
+/// with it (drops it).
+struct Whole {
+    name: String,
+    data: Vec<u8>,
+    tx: std::sync::mpsc::SyncSender<(String, Vec<u8>)>,
+}
+
+impl Write for Whole {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.data.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for Whole {
+    fn drop(&mut self) {
+        let _ = self.tx.send((
+            std::mem::take(&mut self.name),
+            std::mem::take(&mut self.data),
+        ));
     }
 }
 

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use cap_fs_ext::DirExt;
 use cap_std::ambient_authority;
@@ -50,7 +50,7 @@ const KEPT_FOLDERS: usize = 64;
 pub struct Destination {
     root: PathBuf,
     dir: Dir,
-    folders: Mutex<HashMap<PathBuf, Dir>>,
+    folders: Mutex<HashMap<PathBuf, Arc<Dir>>>,
 }
 
 impl Destination {
@@ -151,28 +151,36 @@ impl Destination {
         if folders.is_empty() {
             return then(&self.dir);
         }
+        let folder = self.folder(folders, for_path)?;
+        // The cache is not held while `then` runs, so several threads can
+        // create files at once.
+        then(&folder)
+    }
+
+    /// The handle of the folder `folders`, from the cache or opened (and
+    /// created) one folder at a time from the deepest one cached.
+    fn folder(&self, folders: &[String], for_path: &RelPath) -> Result<Arc<Dir>, Unsafe> {
         let mut cache = self.folders.lock().unwrap_or_else(|e| e.into_inner());
         let key: PathBuf = folders.iter().collect();
         if let Some(dir) = cache.get(&key) {
-            return then(dir);
+            return Ok(Arc::clone(dir));
         }
-        // Start from the deepest folder already open.
         let mut depth = folders.len();
         while depth > 0 && !cache.contains_key(&folders[..depth].iter().collect::<PathBuf>()) {
             depth -= 1;
         }
         let mut current = match depth {
-            0 => self.dir.try_clone()?,
-            _ => cache[&folders[..depth].iter().collect::<PathBuf>()].try_clone()?,
+            0 => Arc::new(self.dir.try_clone()?),
+            _ => Arc::clone(&cache[&folders[..depth].iter().collect::<PathBuf>()]),
         };
         if cache.len() + folders.len() - depth > KEPT_FOLDERS {
             cache.clear();
         }
         for (i, part) in folders.iter().enumerate().skip(depth) {
-            current = step_into(&current, part, for_path)?;
-            cache.insert(folders[..=i].iter().collect(), current.try_clone()?);
+            current = Arc::new(step_into(&current, part, for_path)?);
+            cache.insert(folders[..=i].iter().collect(), Arc::clone(&current));
         }
-        then(&current)
+        Ok(current)
     }
 
     /// Checks the target of a symbolic link the archive stores at `link`. It
@@ -369,6 +377,31 @@ mod tests {
             Err(Unsafe::ThroughLink(_))
         ));
         assert_eq!(fs::read_dir(&outside).expect("read").count(), 0);
+    }
+
+    #[test]
+    fn threads_create_files_in_shared_folders_at_once() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = Destination::new(tmp.path().join("out")).expect("dest");
+        std::thread::scope(|scope| {
+            for t in 0..8 {
+                let dest = &dest;
+                scope.spawn(move || {
+                    for i in 0..200 {
+                        let name = format!("shared/{:02}/t{t}-{i}.txt", i % 10);
+                        dest.create_file(&rel(&name)).expect("file");
+                    }
+                });
+            }
+        });
+        let made: usize = (0..10)
+            .map(|d| {
+                fs::read_dir(tmp.path().join(format!("out/shared/{d:02}")))
+                    .expect("folder")
+                    .count()
+            })
+            .sum();
+        assert_eq!(made, 8 * 200);
     }
 
     #[test]
