@@ -54,6 +54,8 @@ jobs:
           if [ "$RUNNER_OS" = Windows ] && [ -f "/c/Program Files/7-Zip/7z.exe" ]; then
             cp "/c/Program Files/7-Zip/7z.exe" "/c/Program Files/7-Zip/7z.dll" bin/
             echo "SEVENZIP=1" >> "$GITHUB_ENV"
+            # Which machine 7-Zip is built for (x64 runs emulated on ARM64).
+            python -c "import struct,sys; d=open(sys.argv[1],'rb').read(); o=struct.unpack_from('<I',d,0x3c)[0]; print('7z.exe machine', hex(struct.unpack_from('<H',d,o+4)[0]), {0x8664:'x64',0xaa64:'arm64',0x14c:'x86'}.get(struct.unpack_from('<H',d,o+4)[0]))" bin/7z.exe
           fi
           echo "PY=$(command -v python3 || command -v python)" >> "$GITHUB_ENV"
           uname -a
@@ -74,15 +76,20 @@ jobs:
         env:
           BENCH_TITLE: "### ${{ matrix.os }}"
         run: bash scripts/bench-ci.sh
-      - name: Turn Defender real-time protection on
+      - name: Turn Defender real-time protection on, without the runner's exclusions
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # Hosted runners exclude whole drives (C:\ and D:\), so Defender
+          # scans nothing there until the exclusions go.
+          $excluded = (Get-MpPreference).ExclusionPath
+          if ($excluded) { Remove-MpPreference -ExclusionPath $excluded }
           Set-MpPreference -DisableRealtimeMonitoring $false
           Start-Sleep -Seconds 10
           Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,OnAccessProtectionEnabled | Format-List
+          "Exclusions left: $((Get-MpPreference).ExclusionPath)"
       - name: Time with Defender on
         if: runner.os == 'Windows'
         env:
-          BENCH_TITLE: "### ${{ matrix.os }}, Defender real-time protection on"
+          BENCH_TITLE: "### ${{ matrix.os }}, Defender real-time protection on, no exclusions"
         run: bash scripts/bench-ci.sh
