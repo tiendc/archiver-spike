@@ -1,0 +1,5 @@
+# rars comes from a git branch of the fork (see Cargo.toml). Fetch it with the
+# git command line, which has this machine's GitHub credentials; cargo's
+# built-in git cannot use them when github.com is rewritten to ssh.
+[net]
+git-fetch-with-cli = true

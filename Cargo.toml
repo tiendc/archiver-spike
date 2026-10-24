@@ -1,0 +1,53 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# Separate workspaces (tools/ng-probe links C++ the probe's `unrar` also does).
+exclude = ["tools"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace.dependencies]
+spike-safe-path = { path = "crates/safe-path" }
+spike-names = { path = "crates/names" }
+zip = { version = "9.0.5", default-features = false, features = ["aes-crypto", "deflate", "zstd"] }
+sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["aes256", "compress", "util"] }
+unrar = "0.5.8"
+tar = "0.4.46"
+zstd = { version = "0.14.3", features = ["zstdmt"] }
+flate2 = "1.1.10"
+crc32fast = "1.5.2"
+encoding_rs = "0.8.42"
+chardetng = "1.0.0"
+unicode-normalization = "0.1"
+tempfile = "3.27.0"
+cap-std = "4.0.3"
+cap-fs-ext = "4.0.3"
+walkdir = "2.5.0"
+anyhow = "1"
+thiserror = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+dbg_macro = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+
+# Benchmarks are run from release builds; dev builds still optimise the codecs.
+[profile.dev.package."*"]
+opt-level = 2
+
+# rars with the fixes sent upstream (bitplane/rars#89–#96; #93 is merged) on
+# one branch of the fork, until they are merged and released.
+[patch.crates-io]
+rars = { git = "https://github.com/tiendc/rars", branch = "perf-combined" }

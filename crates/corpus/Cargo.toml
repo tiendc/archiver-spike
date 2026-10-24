@@ -1,0 +1,24 @@
+[package]
+name = "spike-corpus"
+description = "Writes the test archives the probe reads: hostile names, old code pages, split 7z"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "corpus"
+path = "src/main.rs"
+
+[dependencies]
+spike-names.workspace = true
+sevenz-rust2.workspace = true
+flate2.workspace = true
+crc32fast.workspace = true
+encoding_rs.workspace = true
+unicode-normalization.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

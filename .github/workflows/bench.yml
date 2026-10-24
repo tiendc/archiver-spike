@@ -1,0 +1,88 @@
+# The spike's tests on three systems, and extraction measured on hosted
+# runners: rars (folder handles, and the old path walk), UnRAR, and 7-Zip on
+# Windows, all on the same generated folder.
+name: Bench
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace --release --locked
+
+  bench:
+    name: Bench (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, windows-11-arm, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build (folder handles, and the old path walk)
+        run: |
+          cargo build --release --locked -p spike-probe
+          cargo build --release --locked -p spike-probe --features path-walk --target-dir target/pathwalk
+          ext=""; [ "$RUNNER_OS" = Windows ] && ext=".exe"
+          mkdir -p bin
+          cp "target/release/rar-perf$ext" "bin/rar-perf$ext"
+          cp "target/pathwalk/release/rar-perf$ext" "bin/rar-perf-pathwalk$ext"
+          if [ "$RUNNER_OS" = Windows ] && [ -f "/c/Program Files/7-Zip/7z.exe" ]; then
+            cp "/c/Program Files/7-Zip/7z.exe" "/c/Program Files/7-Zip/7z.dll" bin/
+            echo "SEVENZIP=1" >> "$GITHUB_ENV"
+          fi
+          echo "PY=$(command -v python3 || command -v python)" >> "$GITHUB_ENV"
+          uname -a
+      - name: Make the folder and the archives
+        run: |
+          "$PY" scripts/bench-data.py "$RUNNER_TEMP/folder"
+          echo "UNPACKED=$("$PY" -c "import pathlib,sys; print(sum(p.stat().st_size for p in pathlib.Path(sys.argv[1]).rglob('*') if p.is_file()))" "$RUNNER_TEMP/folder")" >> "$GITHUB_ENV"
+          bin/rar-perf make "$RUNNER_TEMP/folder" "$RUNNER_TEMP/rar5.rar"
+          bin/rar-perf make4lz "$RUNNER_TEMP/folder" "$RUNNER_TEMP/rar4-lz.rar"
+          ls -l "$RUNNER_TEMP"/*.rar
+      - name: Defender state
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-MpComputerStatus | Select-Object AMServiceEnabled,RealTimeProtectionEnabled,OnAccessProtectionEnabled | Format-List
+          (Get-MpPreference).ExclusionPath
+      - name: Time
+        env:
+          BENCH_TITLE: "### ${{ matrix.os }}"
+        run: bash scripts/bench-ci.sh
+      - name: Turn Defender real-time protection on
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $false
+          Start-Sleep -Seconds 10
+          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,OnAccessProtectionEnabled | Format-List
+      - name: Time with Defender on
+        if: runner.os == 'Windows'
+        env:
+          BENCH_TITLE: "### ${{ matrix.os }}, Defender real-time protection on"
+        run: bash scripts/bench-ci.sh
