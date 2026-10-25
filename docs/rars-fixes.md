@@ -3,8 +3,9 @@
 These were made in a vendored copy of rars 0.12.0 while the spike looked for
 where rars' decoders were slow. They are now six pull requests to upstream,
 each on its own branch of the fork <https://github.com/tiendc/rars>, and all
-six together on its `perf-combined` branch, which the spike uses until they
-are released:
+six together on its `perf-combined` branch. All of them were merged on
+2026-10-24 (with follow-up fixes by the maintainer), and the spike now uses
+upstream `master` until a release carries them:
 
 | PR | Branch | Changes below |
 |---|---|---|
@@ -12,7 +13,7 @@ are released:
 | [bitplane/rars#90](https://github.com/bitplane/rars/pull/90) | `table-driven-huffman` | 2, 3 |
 | [bitplane/rars#91](https://github.com/bitplane/rars/pull/91) | `inline-read-poller` | 4 |
 | [bitplane/rars#92](https://github.com/bitplane/rars/pull/92) | `rar29-history-slack` | 5, 6 |
-| [bitplane/rars#93](https://github.com/bitplane/rars/pull/93) | `crc32fast` | 7 (merged 2026-10-24) |
+| [bitplane/rars#93](https://github.com/bitplane/rars/pull/93) | `crc32fast` | 7 |
 | [bitplane/rars#94](https://github.com/bitplane/rars/pull/94) | `ppmd-state-arena` | 8, 9 |
 | [bitplane/rars#96](https://github.com/bitplane/rars/pull/96) | `solid-directory-flag` | writer: directory headers in a solid run carry FHD_SOLID, as RAR writes them; without it 7-Zip could not extract solid RAR 2.0–4 archives with folders ([#95](https://github.com/bitplane/rars/issues/95)) |
 

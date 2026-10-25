@@ -47,7 +47,7 @@ codegen-units = 4
 [profile.dev.package."*"]
 opt-level = 2
 
-# rars with the fixes sent upstream (bitplane/rars#89–#96; #93 is merged) on
-# one branch of the fork, until they are merged and released.
+# rars from upstream master, which has the fixes sent from here (bitplane/rars
+# #89–#94 and #96, all merged), until a release carries them.
 [patch.crates-io]
-rars = { git = "https://github.com/tiendc/rars", branch = "perf-combined" }
+rars = { git = "https://github.com/bitplane/rars", branch = "master" }

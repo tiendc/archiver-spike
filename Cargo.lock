@@ -604,7 +604,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 [[package]]
 name = "rars"
 version = "0.12.1"
-source = "git+https://github.com/tiendc/rars?branch=perf-combined#8b87be6ce215131c101a5ce25237700351960f72"
+source = "git+https://github.com/bitplane/rars?branch=master#488ef740d7aea090d5a2aa21bdc45fbdbc74e614"
 dependencies = [
  "aes",
  "aho-corasick",
