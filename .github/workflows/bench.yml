@@ -41,7 +41,7 @@ jobs:
       - name: RAR for Linux
         run: |
           for v in 723 624; do
-            curl -fsSL -o /tmp/rar-$v.tar.gz https://www.rarlab.com/rar/rarlinux-x64-$v.tar.gz
+            curl -fsSL --retry 6 --retry-all-errors --retry-delay 20 --connect-timeout 30 -o /tmp/rar-$v.tar.gz https://www.rarlab.com/rar/rarlinux-x64-$v.tar.gz
             mkdir -p /opt/rar-$v && tar -xzf /tmp/rar-$v.tar.gz -C /opt/rar-$v --strip-components=1
           done
       - name: Pack
