@@ -46,6 +46,8 @@ jobs:
           done
       - name: Pack
         run: |
+          # The folder's text is the Cargo registry's sources: fetch them.
+          cargo fetch --locked
           python3 scripts/bench-data.py "$RUNNER_TEMP/folder"
           mkdir real && cd "$RUNNER_TEMP/folder"
           /opt/rar-723/rar a -r -idq -ma5 -m3 "$GITHUB_WORKSPACE/real/rar7-default.rar" .
