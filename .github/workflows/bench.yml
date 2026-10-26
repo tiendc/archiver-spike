@@ -27,9 +27,43 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace --release --locked
 
+  real-archives:
+    # Archives written by RAR itself (RAR for Linux 7.23 and 6.24, trial
+    # versions from rarlab.com), so speed is measured on what users have,
+    # not only on what rars writes (which stores BLAKE2sp hashes).
+    name: Real RAR archives
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: RAR for Linux
+        run: |
+          for v in 723 624; do
+            curl -fsSL -o /tmp/rar-$v.tar.gz https://www.rarlab.com/rar/rarlinux-x64-$v.tar.gz
+            mkdir -p /opt/rar-$v && tar -xzf /tmp/rar-$v.tar.gz -C /opt/rar-$v --strip-components=1
+          done
+      - name: Pack
+        run: |
+          python3 scripts/bench-data.py "$RUNNER_TEMP/folder"
+          mkdir real && cd "$RUNNER_TEMP/folder"
+          /opt/rar-723/rar a -r -idq -ma5 -m3 "$GITHUB_WORKSPACE/real/rar7-default.rar" .
+          /opt/rar-723/rar a -r -idq -ma5 -m3 -s "$GITHUB_WORKSPACE/real/rar7-solid.rar" .
+          /opt/rar-723/rar a -r -idq -ma5 -m3 -s -htb "$GITHUB_WORKSPACE/real/rar7-solid-blake2.rar" .
+          /opt/rar-624/rar a -r -idq -ma4 -m5 -s -mct+ "$GITHUB_WORKSPACE/real/rar6-rar4-ppmd.rar" .
+          python3 -c "import pathlib,sys; print(sum(p.stat().st_size for p in pathlib.Path(sys.argv[1]).rglob('*') if p.is_file()))" . > "$GITHUB_WORKSPACE/real/unpacked.txt"
+          ls -l "$GITHUB_WORKSPACE/real"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: real-archives
+          path: real/
+          retention-days: 3
+
   bench:
     name: Bench (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: real-archives
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -66,6 +100,24 @@ jobs:
           bin/rar-perf make "$RUNNER_TEMP/folder" "$RUNNER_TEMP/rar5.rar"
           bin/rar-perf make4lz "$RUNNER_TEMP/folder" "$RUNNER_TEMP/rar4-lz.rar"
           ls -l "$RUNNER_TEMP"/*.rar
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-archives
+          path: real
+      - name: Time the archives RAR wrote
+        env:
+          BENCH_TITLE: "### ${{ matrix.os }}, archives written by RAR"
+        run: |
+          ways=(
+            "rars decode=bin/rar-perf read {a} sink-handle"
+            "UnRAR decode=bin/rar-perf read {a} unrar-test"
+            "rars extract=bin/rar-perf read {a} rars-disk-pipelined"
+            "UnRAR extract=bin/rar-perf read {a} unrar-pipe-disk"
+          )
+          if [ -n "${SEVENZIP:-}" ]; then
+            ways+=("7-Zip test=bin/7z.exe t {a}" "7-Zip extract=bin/7z.exe x -y -o{out} {a}")
+          fi
+          "$PY" scripts/bench-run.py "$(cat real/unpacked.txt)" real/*.rar -- "${ways[@]}"
       - name: Defender state
         if: runner.os == 'Windows'
         shell: pwsh
